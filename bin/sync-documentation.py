@@ -151,14 +151,14 @@ def update_readme_help_section(content: str, command: str, help_text: str) -> st
     return content
 
 
-def sync_help_to_readme(readme_content: str, help_outputs: dict[str, str]) -> str:
-    """Sync CLI --help outputs to README."""
+def sync_help_to_file(content: str, help_outputs: dict[str, str], filename: str) -> str:
+    """Sync CLI --help outputs to a markdown file using BEGIN/END markers."""
     for command, help_text in help_outputs.items():
-        readme_content = update_readme_help_section(readme_content, command, help_text)
+        content = update_readme_help_section(content, command, help_text)
         printable_command = "jstall" if command == "" else f"jstall {command}"
-        print(f"Synced {printable_command} --help to README")
+        print(f"Synced {printable_command} --help to {filename}")
 
-    return readme_content
+    return content
 
 
 
@@ -188,43 +188,51 @@ Examples:
 
     repo_root = get_repo_root()
     readme_file = repo_root / "README.md"
+    commands_file = repo_root / "docs" / "COMMANDS.md"
 
     if not readme_file.exists():
         print(f"Error: README.md not found at {readme_file}", file=sys.stderr)
         sys.exit(1)
 
-    # Read README
+    # Read files
     readme_content = read_file(readme_file)
-    original_content = readme_content
+    original_readme = readme_content
+
+    commands_content = read_file(commands_file) if commands_file.exists() else None
+    original_commands = commands_content
 
     # Build and sync CLI help (unless skipped)
     if args.skip_build:
         print("Skipping build (--skip-build specified)")
     help_outputs = build_project_and_get_help(skip_build=args.skip_build)
     if help_outputs:
-        readme_content = sync_help_to_readme(readme_content, help_outputs)
+        readme_content = sync_help_to_file(readme_content, help_outputs, "README.md")
+        if commands_content is not None:
+            commands_content = sync_help_to_file(commands_content, help_outputs, "docs/COMMANDS.md")
     else:
         print("Warning: No help outputs extracted", file=sys.stderr)
 
-    # Write updated README
-    if readme_content != original_content:
+    # Write updated files
+    for filepath, content, original in [
+        (readme_file, readme_content, original_readme),
+        (commands_file, commands_content, original_commands),
+    ]:
+        if content is None or content == original:
+            continue
         if args.dry_run:
-            print("\n--- DRY RUN: Changes to README.md ---")
-            # Show diff
+            print(f"\n--- DRY RUN: Changes to {filepath.relative_to(repo_root)} ---")
             import difflib
             diff = difflib.unified_diff(
-                original_content.splitlines(keepends=True),
-                readme_content.splitlines(keepends=True),
-                fromfile='README.md (original)',
-                tofile='README.md (updated)'
+                original.splitlines(keepends=True),
+                content.splitlines(keepends=True),
+                fromfile=f'{filepath.name} (original)',
+                tofile=f'{filepath.name} (updated)'
             )
             print(''.join(diff))
             print("--- END DRY RUN ---")
         else:
-            write_file(readme_file, readme_content)
-            print("✓ Updated README.md")
-    else:
-        print("README.md is already up to date")
+            write_file(filepath, content)
+            print(f"✓ Updated {filepath.relative_to(repo_root)}")
 
     print("Documentation sync complete!")
 

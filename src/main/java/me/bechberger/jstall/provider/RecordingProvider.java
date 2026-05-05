@@ -284,10 +284,12 @@ public class RecordingProvider {
             return;
         }
 
-        for (DataRequirement requirement : requirements.getRequirements()) {
-            List<CollectedData> samples = targetData.data().getOrDefault(requirement, List.of());
+        // Iterate the data map directly rather than using requirements as keys, because the
+        // requirement instances used during collection (via copy()) differ from the originals.
+        for (Map.Entry<DataRequirement, List<CollectedData>> entry : targetData.data().entrySet()) {
+            List<CollectedData> samples = entry.getValue();
             if (!samples.isEmpty()) {
-                requirement.persist(zipOut, pidPath, samples);
+                entry.getKey().persist(zipOut, pidPath, samples);
             }
         }
     }
@@ -308,11 +310,12 @@ public class RecordingProvider {
 
         if (targetData.successful()) {
             List<Object> sampleCounts = new ArrayList<>();
-            for (DataRequirement requirement : requirements.getRequirements()) {
-                int count = targetData.data().getOrDefault(requirement, List.of()).size();
+            // Iterate the data map directly rather than using requirements as keys, because the
+            // requirement instances used during collection (via copy()) differ from the originals.
+            for (Map.Entry<DataRequirement, List<CollectedData>> entry : targetData.data().entrySet()) {
                 sampleCounts.add(Map.of(
-                    "type", requirement.getType(),
-                    "count", count
+                    "type", entry.getKey().getType(),
+                    "count", entry.getValue().size()
                 ));
             }
             root.put("sampleCounts", sampleCounts);

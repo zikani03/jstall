@@ -146,6 +146,9 @@ public abstract class BaseAnalyzerCommand implements Callable<Integer> {
         } catch (SSHCommandException e) {
             System.err.println("ERROR: " + e.getMessage());
             return 2;
+        } catch (IOException e) {
+            System.err.println("Error: Failed to open replay file: " + e.getMessage());
+            return 1;
         }
         if (!resolution.isSuccess()) {
             printResolutionError(resolution, context);
@@ -299,6 +302,7 @@ public abstract class BaseAnalyzerCommand implements Callable<Integer> {
     private Integer processSingleTarget(ResolvedTarget target, AnalysisContext context) throws Exception {
         LoadedTargetData targetData = loadTargetData(context.executor, target, context.analyzer, context.dumpCount, context.options);
         if (targetData.error() != null) {
+            printTargetLoadError(target, targetData.error());
             return 1;
         }
         if (!validateDumpRequirement(targetData.threadDumps(), context.analyzer)) {
@@ -307,6 +311,19 @@ public abstract class BaseAnalyzerCommand implements Callable<Integer> {
 
         ResolvedData data = ResolvedData.fromDumpsAndCollectedData(targetData.threadDumps(), targetData.collectedDataByType());
         return analyzeAndPrintResult(data, context);
+    }
+
+    private void printTargetLoadError(ResolvedTarget target, Exception error) {
+        String message = error.getMessage() != null ? error.getMessage() : error.toString();
+        if (target instanceof ResolvedTarget.File file) {
+            System.err.println("Error loading dump file " + file.path() + ": " + message);
+            return;
+        }
+        if (target instanceof ResolvedTarget.Pid pid) {
+            System.err.println("Error collecting dumps for PID " + pid.pid() + ": " + message);
+            return;
+        }
+        System.err.println("Error loading target data: " + message);
     }
 
     private Integer processMultipleTargets(List<ResolvedTarget> targets, AnalysisContext context) {

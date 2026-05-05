@@ -140,7 +140,7 @@ class DependencyTreeAnalyzerTest {
         String output = result.output();
 
         // Should show dependency
-        assertTrue(output.contains("Thread Dependency Graph"));
+        assertTrue(output.contains("Thread Dependency Tree"));
         assertTrue(output.contains("thread-2"));
         assertTrue(output.contains("thread-1"));
         assertTrue(output.contains("0x12345")); // Lock ID in root locks section
@@ -231,7 +231,7 @@ class DependencyTreeAnalyzerTest {
         String output = result.output();
 
         // Should show the tree structure
-        assertTrue(output.contains("Thread Dependency Graph"));
+        assertTrue(output.contains("Thread Dependency Tree"));
         assertTrue(output.contains("Total blocked threads: 2"));
 
         // Should include category prefixes
@@ -508,7 +508,7 @@ class DependencyTreeAnalyzerTest {
         String output = result.output();
 
         // Check for expected output structure
-        assertTrue(output.contains("Thread Dependency Graph"), "Should contain header");
+        assertTrue(output.contains("Thread Dependency Tree"), "Should contain header");
         assertTrue(output.contains("io-thread"), "Should contain blocked thread name");
         assertTrue(output.contains("db-thread"), "Should contain root thread name");
         assertTrue(output.contains("0xDB01"), "Should contain lock ID");

@@ -623,4 +623,15 @@ class EdgeCaseAndComplexTest {
         RunCommandUtil.run("-f", file.toString(), "threads", "1000").hasNoError().output().isNotBlank();
     }
 
+    @Test
+    void invalidDumpFileShowsHelpfulError() throws Exception {
+        Path invalidDump = Files.createTempFile("not-a-dump-", ".txt");
+        Files.writeString(invalidDump, "This is not a JVM thread dump");
+        invalidDump.toFile().deleteOnExit();
+
+        RunCommandUtil.run("threads", invalidDump.toString())
+            .hasExitCode(1)
+            .errorOutput().contains("Could not parse thread dump");
+    }
+
 }

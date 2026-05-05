@@ -89,7 +89,7 @@ public class DependencyTreeAnalyzer extends BaseAnalyzer {
             if (!deadlockSummary.isBlank()) {
                 return AnalyzerResult.ok(deadlockSummary);
             }
-            return AnalyzerResult.ok("Thread Dependency Graph\n"
+            return AnalyzerResult.ok("Thread Dependency Tree\n"
                 + "======================\n\n"
                 + "No lock-based dependency trees found across collected dumps.");
         }
@@ -472,9 +472,9 @@ public class DependencyTreeAnalyzer extends BaseAnalyzer {
                                         Map<Long, Instant> firstSeenTimes,
                                         Map<String, Integer> heavyNodes) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Thread Dependency Graph\n");
+        sb.append("Thread Dependency Tree\n");
         sb.append("======================\n\n");
-        sb.append("Shows which threads are waiting on locks held by other threads.\n");
+        sb.append("Shows lock-based dependency trees across collected dumps.\n");
 
         Instant baseline = firstSeenTimes.values().stream()
                 .min(Comparator.naturalOrder())
