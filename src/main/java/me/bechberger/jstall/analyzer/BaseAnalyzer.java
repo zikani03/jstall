@@ -91,7 +91,10 @@ public abstract class BaseAnalyzer implements Analyzer {
 
                 Long threadId = thread.threadId();
                 if (threadId == null) {
-                    // Skip threads without IDs
+                    // Use negative native ID as synthetic key for VM/GC threads
+                    threadId = thread.nativeId() != null ? -thread.nativeId() : null;
+                }
+                if (threadId == null) {
                     continue;
                 }
 

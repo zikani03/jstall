@@ -175,18 +175,21 @@ public abstract class BaseAnalyzerCommand implements Callable<Integer> {
             return 1;
         }
 
-        // Live mode: single target only, delegate to LiveModeRunner
+        // Live mode: delegate to LiveModeRunner (single target only)
         if (live) {
             List<ResolvedTarget> resolvedTargets = resolution.targets();
+            // Check if all targets are running JVMs
+            for (ResolvedTarget target : resolvedTargets) {
+                if (!(target instanceof ResolvedTarget.Pid)) {
+                    System.err.println("Error: --live requires running JVM targets (not files)");
+                    return 1;
+                }
+            }
             if (resolvedTargets.size() != 1) {
-                System.err.println("Error: --live requires exactly one target (got " + resolvedTargets.size() + ")");
+                System.err.println("Error: --live requires exactly one target JVM process");
                 return 1;
             }
-            ResolvedTarget target = resolvedTargets.get(0);
-            if (!(target instanceof ResolvedTarget.Pid pidTarget)) {
-                System.err.println("Error: --live requires a running JVM target (not a file)");
-                return 1;
-            }
+            ResolvedTarget.Pid pidTarget = (ResolvedTarget.Pid) resolvedTargets.get(0);
             LiveModeRunner runner = new LiveModeRunner(
                     context.executor(), pidTarget.pid(), pidTarget.mainClass(),
                     context.analyzer(), context.options(),

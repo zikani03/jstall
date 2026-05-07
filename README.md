@@ -226,7 +226,7 @@ Monitor a JVM continuously with an interactive TUI (Linux/macOS only):
 ```bash
 jstall status 12345 --live
 jstall status MyApp --live --color
-jstall threads 12345 --live --color
+jstall threads 12345 --live 
 ```
 
 > **Note:** `--live` requires a Unix-like environment (Linux, macOS, or WSL). It is not available on Windows.
@@ -239,7 +239,6 @@ jstall threads 12345 --live --color
 - Adjust collection interval (`+`/`-`), force refresh (`r`)
 - Colored output with `--color` (green=RUNNABLE, red=BLOCKED, yellow=WAITING, CPU% intensity)
 - Scroll (`j`/`k` or arrows), horizontal pan (`h`/`l`)
-
 ---
 
 ## Recording & Replay

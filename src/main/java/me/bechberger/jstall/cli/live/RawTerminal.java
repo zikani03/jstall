@@ -61,12 +61,15 @@ public class RawTerminal implements AutoCloseable {
      * Reads a key event with timeout. Returns null if no key pressed within timeout.
      */
     public KeyEvent readKey(long timeoutMs) throws IOException {
-        if (ttyInput == null) return null;
+        FileInputStream input = ttyInput;
+        if (input == null) return null;
 
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < deadline) {
-            if (ttyInput.available() > 0) {
-                int b = ttyInput.read();
+            input = ttyInput;
+            if (input == null) return null;
+            if (input.available() > 0) {
+                int b = input.read();
                 if (b == -1) return null;
                 return decodeKey(b);
             }
