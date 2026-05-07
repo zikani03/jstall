@@ -313,7 +313,7 @@ at com.example.Service.processRequest(Service.java:78)
 <dependency>
     <groupId>me.bechberger</groupId>
     <artifactId>jstall</artifactId>
-    <version>0.6.2</version>
+    <version>0.7.0</version>
 </dependency>
 ```
 

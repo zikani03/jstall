@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+### Changed
+### Deprecated
+### Removed
+### Fixed
+### Security
+
+## [0.7.0] - 2026-05-07
+
+### Added
 - Live mode (`--live`): interactive TUI with async data collection, tab navigation, sorting, filtering, and scroll
 - `--color` flag for colored output in live mode (thread states, CPU % intensity)
 - Secondary sort in live mode: press `s` then `1-9` to add tiebreaker columns
