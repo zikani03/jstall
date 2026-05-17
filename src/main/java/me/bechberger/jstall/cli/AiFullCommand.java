@@ -26,7 +26,7 @@ import java.util.concurrent.Callable;
 )
 public class AiFullCommand implements Callable<Integer> {
 
-    @Option(names = "--local", description = "Use local Ollama provider (overrides config)")
+    @Option(names = "--local", description = "Use local OpenAI-compatible provider (overrides config)")
     private boolean useLocal;
 
     @Option(names = "--remote", description = "Use remote Gardener AI provider (overrides config)")
@@ -66,7 +66,7 @@ public class AiFullCommand implements Callable<Integer> {
     @Option(names = "--short", description = "Create a succinct summary of the system analysis")
     private boolean shortMode;
 
-    @Option(names = "--thinking", description = "Show thinking tokens (Ollama only)")
+    @Option(names = "--think", description = "Show thinking/reasoning tokens (local provider only)")
     private boolean showThinking;
 
     Spec spec;
@@ -109,7 +109,7 @@ public class AiFullCommand implements Callable<Integer> {
         options.put("dry-run", dryRun);
         options.put("cpu-threshold", cpuThreshold);
         options.put("short", shortMode);
-        options.put("thinking", showThinking);
+        options.put("think", showThinking);
 
         // Handle question (with stdin support)
         if (question != null) {

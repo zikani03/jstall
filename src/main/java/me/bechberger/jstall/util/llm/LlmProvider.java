@@ -11,8 +11,27 @@ public interface LlmProvider {
 
     /**
          * Represents a chat message with role and content.
+         * For tool responses, toolCallId is set. For assistant messages with tool calls, toolCalls is set.
          */
-        record Message(String role, String content) {
+        record Message(String role, String content, String toolCallId, Object toolCalls) {
+
+        public Message(String role, String content) {
+                this(role, content, null, null);
+            }
+
+        /**
+             * Creates a tool response message.
+             */
+            public static Message toolResult(String toolCallId, String content) {
+                return new Message("tool", content, toolCallId, null);
+            }
+
+        /**
+             * Creates an assistant message with tool calls (for replaying in conversation).
+             */
+            public static Message assistantWithToolCalls(Object toolCalls) {
+                return new Message("assistant", null, null, toolCalls);
+            }
     }
 
     /**

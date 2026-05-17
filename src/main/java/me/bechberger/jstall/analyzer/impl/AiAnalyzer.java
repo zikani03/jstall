@@ -5,7 +5,11 @@ import me.bechberger.jstall.analyzer.BaseAnalyzer;
 import me.bechberger.jstall.analyzer.DumpRequirement;
 import me.bechberger.jstall.analyzer.ResolvedData;
 import me.bechberger.jstall.provider.requirement.DataRequirements;
+import me.bechberger.jstall.util.llm.AiTools;
 import me.bechberger.jstall.util.llm.LlmProvider;
+import me.bechberger.jstall.util.llm.OpenAiLlmProvider;
+import me.bechberger.jstall.util.llm.ToolDefinition;
+import me.bechberger.jstall.util.llm.ToolExecutor;
 import me.bechberger.jstall.util.SystemAnalyzer;
 import me.bechberger.jstall.util.CommandExecutor;
 import org.jetbrains.annotations.NotNull;
@@ -59,7 +63,9 @@ public class AiAnalyzer extends BaseAnalyzer {
         options.add("raw");
         options.add("dry-run");
         options.add("short");
-        options.add("thinking");
+        options.add("think");
+        options.add("tools");
+        options.add("no-tools");
         return options;
     }
 
@@ -81,7 +87,16 @@ public class AiAnalyzer extends BaseAnalyzer {
         boolean rawOutput = getBooleanOption(options, "raw", false);
         boolean dryRun = getBooleanOption(options, "dry-run", false);
         boolean shortMode = getBooleanOption(options, "short", false);
-        boolean showThinking = getBooleanOption(options, "thinking", false);
+        boolean showThinking = getBooleanOption(options, "think", false);
+        // Auto-enable tools for local OpenAI provider unless explicitly disabled
+        boolean useTools;
+        if (getBooleanOption(options, "no-tools", false)) {
+            useTools = false;
+        } else if (options.containsKey("tools")) {
+            useTools = getBooleanOption(options, "tools", false);
+        } else {
+            useTools = (llmProvider instanceof OpenAiLlmProvider);
+        }
 
         // Enable intelligent filtering by default
         Map<String, Object> statusOptions = new HashMap<>(options);
@@ -117,7 +132,7 @@ public class AiAnalyzer extends BaseAnalyzer {
 
         // Call LLM API
         try {
-            String aiAnalysis = callLLM(model, userPrompt, rawOutput, showThinking);
+            String aiAnalysis = callLLM(model, userPrompt, rawOutput, showThinking, useTools, shortMode, data);
 
             // If short mode, run through LLM again for succinct summary
             if (shortMode && !rawOutput) {
@@ -187,7 +202,7 @@ public class AiAnalyzer extends BaseAnalyzer {
         boolean rawOutput = getBooleanOption(options, "raw", false);
         boolean dryRun = getBooleanOption(options, "dry-run", false);
         boolean shortMode = getBooleanOption(options, "short", false);
-        boolean showThinking = getBooleanOption(options, "thinking", false);
+        boolean showThinking = getBooleanOption(options, "think", false);
         double cpuThreshold = getDoubleOption(options, "cpu-threshold", 1.0);
 
         // Enable intelligent filtering by default
@@ -236,7 +251,7 @@ public class AiAnalyzer extends BaseAnalyzer {
 
         // Call LLM API
         try {
-            String aiAnalysis = callLLM(model, userPrompt, rawOutput, showThinking);
+            String aiAnalysis = callLLM(model, userPrompt, rawOutput, showThinking, false, shortMode, null);
 
             // If short mode, run through LLM again for succinct summary
             if (shortMode && !rawOutput) {
@@ -317,15 +332,48 @@ public class AiAnalyzer extends BaseAnalyzer {
         }
     }
 
-    /**
-     * Calls the LLM with the given prompt and returns the response.
-     */
-    private String callLLM(String model, String userPrompt, boolean rawOutput, boolean showThinking)
+    private static final String TOOLS_SYSTEM_ADDENDUM =
+        "\n\nYou have tools to dig deeper into the application state. " +
+        "Before answering, use tools to verify your hypotheses and gather evidence. " +
+        "For example:\n" +
+        "- Use get_thread_stack_trace to see exactly what a suspicious thread is doing\n" +
+        "- Use search_stack_frames to find threads executing specific code\n" +
+        "- Use get_lock_info to verify lock contention\n" +
+        "- Use get_top_cpu_threads to identify hot threads\n" +
+        "Don't guess — investigate with tools first, then provide a well-supported analysis.";
+
+    private String callLLM(String model, String userPrompt, boolean rawOutput, boolean showThinking,
+                           boolean useTools, boolean shortMode, ResolvedData data)
             throws IOException, LlmProvider.LlmException {
 
         List<LlmProvider.Message> messages = new ArrayList<>();
-        messages.add(new LlmProvider.Message("system", SYSTEM_PROMPT));
+        messages.add(new LlmProvider.Message("system", SYSTEM_PROMPT +
+            (useTools ? TOOLS_SYSTEM_ADDENDUM : "")));
         messages.add(new LlmProvider.Message("user", userPrompt));
+
+        // Use tool-calling loop if enabled and provider supports it
+        if (useTools && !rawOutput && llmProvider instanceof OpenAiLlmProvider openAiProvider && data != null) {
+            AiTools aiTools = new AiTools(data);
+            List<ToolDefinition> tools = aiTools.getToolDefinitions();
+            ToolExecutor executor = aiTools.createExecutor();
+
+            StringBuilder output = new StringBuilder();
+            LlmProvider.StreamHandlers handlers = new LlmProvider.StreamHandlers(
+                content -> {
+                    output.append(content);
+                    System.out.print(content);
+                    System.out.flush();
+                },
+                showThinking ? (thinkingToken -> {
+                    System.err.print(thinkingToken);
+                    System.err.flush();
+                }) : null
+            );
+
+            String result = openAiProvider.chatWithToolLoop(model, messages, tools, executor, handlers, 5);
+            System.out.println();
+            return result;
+        }
 
         if (rawOutput) {
             // Return raw response
@@ -333,39 +381,144 @@ public class AiAnalyzer extends BaseAnalyzer {
         } else {
             // Stream response
             StringBuilder output = new StringBuilder();
+            boolean suppressOutput = shortMode && llmProvider.supportsStreaming();
 
             // Warn if thinking mode is requested but provider doesn't support streaming
             if (showThinking && !llmProvider.supportsStreaming()) {
-                System.err.println("Note: Thinking mode not supported by this provider (no streaming support)");
+                System.err.println("Note: --think mode not supported by this provider (no streaming support)");
             }
 
-            AtomicBoolean hadClosingThink = new AtomicBoolean(false);
-
-            LlmProvider.StreamHandlers handlers = new LlmProvider.StreamHandlers(
-                content -> {
-                    if (hadClosingThink.get() || showThinking) {
-                        output.append(content);
-                        System.out.print(content);
-                        System.out.flush();
-                    }
-                    if (content.contains("</think>")) {
-                        content = content.substring(content.indexOf("</think>") + "</think>".length());
-                        output.append(content);
-                        System.out.print(content);
-                        System.out.flush();
-                        hadClosingThink.set(true);
-                    }
-                },
-                showThinking && llmProvider.supportsStreaming() ? (thinkingToken -> {
-                    System.err.print(thinkingToken);
-                    System.err.flush();
-                }) : null
-            );
+            LlmProvider.StreamHandlers handlers = createStreamHandlers(
+                output, showThinking, suppressOutput);
 
             llmProvider.chat(model, messages, handlers);
-            System.out.println(); // Final newline
+            if (!suppressOutput) {
+                System.out.println(); // Final newline
+            }
             return output.toString();
         }
+    }
+
+    /**
+     * Creates stream handlers that properly handle &lt;think&gt;...&lt;/think&gt; blocks,
+     * including tokens split across chunk boundaries (e.g. "&lt;thi" + "nk&gt;").
+     *
+     * @param output The buffer to accumulate the final response text
+     * @param showThinking Whether to emit thinking tokens to stderr
+     * @param suppressOutput If true, don't print to stdout (used for short mode)
+     */
+    private LlmProvider.StreamHandlers createStreamHandlers(
+            StringBuilder output, boolean showThinking, boolean suppressOutput) {
+
+        // Buffer for handling partial tags split across chunks
+        StringBuilder tagBuffer = new StringBuilder();
+        AtomicBoolean inThinkBlock = new AtomicBoolean(false);
+
+        return new LlmProvider.StreamHandlers(
+            content -> {
+                // Append to tag buffer and process
+                tagBuffer.append(content);
+                processTagBuffer(tagBuffer, inThinkBlock, output, showThinking, suppressOutput);
+            },
+            showThinking && llmProvider.supportsStreaming() ? (thinkingToken -> {
+                System.err.print(thinkingToken);
+                System.err.flush();
+            }) : null
+        );
+    }
+
+    /**
+     * Processes the tag buffer, extracting complete tags and emitting content appropriately.
+     * Handles the case where &lt;think&gt; or &lt;/think&gt; tags are split across chunks.
+     */
+    private void processTagBuffer(StringBuilder buffer, AtomicBoolean inThinkBlock,
+                                   StringBuilder output, boolean showThinking, boolean suppressOutput) {
+        while (buffer.length() > 0) {
+            String text = buffer.toString();
+
+            if (inThinkBlock.get()) {
+                // Inside a think block — look for </think>
+                int closeIdx = text.indexOf("</think>");
+                if (closeIdx >= 0) {
+                    // Found close tag
+                    String thinking = text.substring(0, closeIdx);
+                    if (showThinking && !thinking.isEmpty()) {
+                        System.err.print(thinking);
+                        System.err.flush();
+                    }
+                    inThinkBlock.set(false);
+                    buffer.delete(0, closeIdx + "</think>".length());
+                    continue;
+                }
+                // Check if buffer might contain a partial </think> at the end
+                if (text.length() >= 8 || !couldBePartialTag(text, "</think>")) {
+                    // Safe to emit what we have (minus potential partial tag at end)
+                    int safeEnd = findSafeEnd(text, "</think>");
+                    String safe = text.substring(0, safeEnd);
+                    if (showThinking && !safe.isEmpty()) {
+                        System.err.print(safe);
+                        System.err.flush();
+                    }
+                    buffer.delete(0, safeEnd);
+                }
+                return; // Wait for more data
+            } else {
+                // Outside think block — look for <think>
+                int openIdx = text.indexOf("<think>");
+                if (openIdx >= 0) {
+                    // Emit content before the tag
+                    String before = text.substring(0, openIdx);
+                    if (!before.isEmpty()) {
+                        emitContent(before, output, suppressOutput);
+                    }
+                    inThinkBlock.set(true);
+                    buffer.delete(0, openIdx + "<think>".length());
+                    continue;
+                }
+                // Check if buffer ends with a partial <think> tag
+                if (text.length() >= 7 || !couldBePartialTag(text, "<think>")) {
+                    int safeEnd = findSafeEnd(text, "<think>");
+                    String safe = text.substring(0, safeEnd);
+                    if (!safe.isEmpty()) {
+                        emitContent(safe, output, suppressOutput);
+                    }
+                    buffer.delete(0, safeEnd);
+                }
+                return; // Wait for more data
+            }
+        }
+    }
+
+    private void emitContent(String content, StringBuilder output, boolean suppressOutput) {
+        output.append(content);
+        if (!suppressOutput) {
+            System.out.print(content);
+            System.out.flush();
+        }
+    }
+
+    /**
+     * Checks if the end of text could be the start of a partial tag.
+     */
+    private boolean couldBePartialTag(String text, String tag) {
+        for (int len = 1; len < tag.length() && len <= text.length(); len++) {
+            if (text.endsWith(tag.substring(0, len))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns the index up to which it's safe to emit, avoiding splitting a potential partial tag.
+     */
+    private int findSafeEnd(String text, String tag) {
+        for (int len = tag.length() - 1; len >= 1; len--) {
+            if (text.endsWith(tag.substring(0, len))) {
+                return text.length() - len;
+            }
+        }
+        return text.length();
     }
 
     /**

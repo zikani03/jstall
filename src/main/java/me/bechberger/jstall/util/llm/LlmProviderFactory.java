@@ -1,5 +1,7 @@
 package me.bechberger.jstall.util.llm;
 
+import java.io.IOException;
+
 /**
  * Central place for selecting and configuring LLM providers.
  *
@@ -16,7 +18,7 @@ public final class LlmProviderFactory {
     /**
      * Create an LLM provider + model selection.
      *
-     * @param forceLocal  if true, force Ollama
+     * @param forceLocal  if true, force local OpenAI-compatible provider
      * @param forceRemote if true, force Gardener
      * @param modelOverride optional explicit model (null means: config/provider default)
      */
@@ -37,42 +39,51 @@ public final class LlmProviderFactory {
             }
         }
 
-        boolean useOllama;
+        AiConfig.Provider selectedProvider;
         if (forceLocal) {
-            useOllama = true;
+            selectedProvider = AiConfig.Provider.LOCAL;
         } else if (forceRemote) {
-            useOllama = false;
+            selectedProvider = AiConfig.Provider.GARDENER;
         } else {
-            useOllama = config.isOllama();
+            selectedProvider = config.provider();
         }
 
         LlmProvider provider;
-        if (useOllama) {
-            String host = (config != null && config.ollamaHost() != null)
-                ? config.ollamaHost()
-                : "http://127.0.0.1:11434";
-            AiConfig.OllamaThinkMode thinkMode = (config != null) ? config.getEffectiveOllamaThinkMode() : null;
-            provider = new OllamaLlmProvider(host, thinkMode);
-        } else {
-            // Gardener needs API key (config -> env)
-            String key = (config != null) ? config.apiKey() : null;
-            if (key == null) {
-                key = System.getenv("ANSWERING_MACHINE_APIKEY");
+        switch (selectedProvider) {
+            case LOCAL -> {
+                String host = (config != null && config.localHost() != null)
+                    ? config.localHost()
+                    : "http://127.0.0.1:8080";
+                // Auto-launch llama-server if configured and not already running
+                String hfModel = (config != null) ? config.llamaServerModel() : null;
+                try {
+                    LlamaServerLauncher.ensureRunning(host, hfModel);
+                } catch (IOException e) {
+                    throw new IllegalArgumentException("Failed to start llama-server: " + e.getMessage());
+                }
+                provider = new OpenAiLlmProvider(host);
             }
-            if (key == null || key.trim().isEmpty()) {
-                throw new IllegalArgumentException("API key required for Gardener AI provider. Configure api.key or set ANSWERING_MACHINE_APIKEY");
+            default -> {
+                // Gardener needs API key (config -> env)
+                String key = (config != null) ? config.apiKey() : null;
+                if (key == null) {
+                    key = System.getenv("ANSWERING_MACHINE_APIKEY");
+                }
+                if (key == null || key.trim().isEmpty()) {
+                    throw new IllegalArgumentException("API key required for Gardener AI provider. Configure api.key or set ANSWERING_MACHINE_APIKEY");
+                }
+                provider = new GardenerLlmProvider(key.trim());
             }
-            provider = new GardenerLlmProvider(key.trim());
         }
 
         String model = modelOverride;
         if (model == null) {
             if (forceLocal || forceRemote) {
-                model = useOllama ? "qwen3:30b" : "gpt-50-nano";
+                model = selectedProvider == AiConfig.Provider.LOCAL ? "local" : "gpt-50-nano";
             } else if (config.model() != null) {
                 model = config.model();
             } else {
-                model = useOllama ? "qwen3:30b" : "gpt-50-nano";
+                model = selectedProvider == AiConfig.Provider.LOCAL ? "local" : "gpt-50-nano";
             }
         }
 

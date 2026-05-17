@@ -332,11 +332,10 @@ model=gpt-50-nano
 api.key=your-api-key
 ```
 
-**Local OpenAI-compatible server** (llama-server, Ollama, vLLM, LocalAI, etc.):
+**Local OpenAI-compatible server** (llama-server, vLLM, LocalAI, etc.):
 ```properties
 provider=local
 local.host=http://127.0.0.1:8080
-model=local
 ```
 
 **Auto-launch llama-server** — if `llama-server` is installed and no server is running, JStall can launch one automatically with a HuggingFace model:
@@ -356,7 +355,7 @@ The server is started in the background with the specified model and stopped whe
 | `--remote` | Force remote Gardener provider |
 | `--model <name>` | Override LLM model |
 | `--question <q>` | Custom question (use `-` for stdin) |
-| `--thinking` | Show thinking/reasoning tokens |
+| `--think` | Show thinking/reasoning tokens (local provider only) |
 | `--short` | Produce a succinct summary |
 | `--raw` | Output raw JSON response |
 | `--dry-run` | Show prompt without calling AI |

@@ -1,7 +1,5 @@
 package me.bechberger.jstall.util.llm;
 
-import org.jetbrains.annotations.NotNull;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,48 +7,44 @@ import java.nio.file.Paths;
 import java.util.Properties;
 
 /**
- * Configuration for AI providers (Gardener or Ollama).
+ * Configuration for AI providers (Gardener or local OpenAI-compatible server).
  * <p>
  * Reads from .jstall-ai-config file in current directory or home directory.
  * Falls back to .gaw file for backward compatibility with Gardener API key.
  * <p>
  * Config file format (Java properties):
  * <pre>
- * provider=ollama
- * model=qwen2.5:14b
- * ollama.host=<a href="http://127.0.0.1:11434">...</a>
+ * # Local OpenAI-compatible server (llama-server, vLLM, etc.):
+ * provider=local
+ * local.host=http://127.0.0.1:8080
+ *
+ * # Auto-launch llama-server with a HuggingFace model:
+ * local.llama-server-model=AaryanK/Qwen3.5-9B-GGUF:Q8_0
+ * # Smaller alternative:
+ * #local.llama-server-model=AaryanK/Qwen3.5-4B-GGUF:Q8_0
+ *
+ * # Remote Gardener provider:
+ * provider=gardener
+ * model=gpt-50-nano
  * api.key=your-gardener-api-key
  * </pre>
  */
-public record AiConfig(Provider provider, String model, String apiKey, String ollamaHost,
-                       OllamaThinkMode ollamaThinkMode) {
+public record AiConfig(Provider provider, String model, String apiKey, String localHost,
+                       String llamaServerModel) {
 
     private static final String CONFIG_FILENAME = ".jstall-ai-config";
     private static final String GAW_FILENAME = ".gaw";
 
     public enum Provider {
         GARDENER,
-        OLLAMA
+        LOCAL
     }
 
     /**
-     * Think mode for Ollama.
-     *
-     * <p>Ollama supports a boolean think flag for many models. The model "gpt-oss" requires
-     * a string think mode ("low", "medium", "high"); passing true/false is ignored.
+     * Creates a config with explicit values (no llama-server model).
      */
-    public enum OllamaThinkMode {
-        OFF,
-        LOW,
-        MEDIUM,
-        HIGH
-    }
-
-    /**
-     * Creates a config with explicit values.
-     */
-    public AiConfig(Provider provider, String model, String apiKey, String ollamaHost) {
-        this(provider, model, apiKey, ollamaHost, null);
+    public AiConfig(Provider provider, String model, String apiKey, String localHost) {
+        this(provider, model, apiKey, localHost, null);
     }
 
     /**
@@ -173,71 +167,41 @@ public record AiConfig(Provider provider, String model, String apiKey, String ol
         return null;
     }
 
-    private static AiConfig fromProperties(Properties props) {
+    static AiConfig fromProperties(Properties props) {
         String providerStr = props.getProperty("provider", "gardener").toLowerCase();
-        Provider provider = providerStr.equals("ollama") ? Provider.OLLAMA : Provider.GARDENER;
+        Provider provider = switch (providerStr) {
+            case "local", "ollama", "llama-server", "llamaserver", "llama_server" -> Provider.LOCAL;
+            default -> Provider.GARDENER;
+        };
 
         String model = props.getProperty("model",
-                provider == Provider.OLLAMA ? "qwen3:30b" : "gpt-50-nano");
+                provider == Provider.LOCAL ? "local" : "gpt-50-nano");
 
         String apiKey = props.getProperty("api.key");
-        String ollamaHost = props.getProperty("ollama.host", "http://127.0.0.1:11434");
 
-        boolean isGptOss = model != null && model.toLowerCase().startsWith("gpt-oss");
-
-        // Ollama think mode:
-        // - For most models: handled as boolean (OFF => think=false; otherwise think=true)
-        // - For model gpt-oss*: prefers string think: low|medium|high
-        //   Additionally, we map:
-        //     true  -> high
-        //     false -> low
-        //   (this exists because gpt-oss ignores boolean think values)
-        // Default: ON/high
-        String thinkStr = props.getProperty("ollama.think");
-        OllamaThinkMode thinkMode = getOllamaThinkMode(thinkStr, isGptOss);
-
-        return new AiConfig(provider, model, apiKey, ollamaHost, thinkMode);
-    }
-
-    private static @NotNull OllamaThinkMode getOllamaThinkMode(String thinkStr, boolean isGptOss) {
-        OllamaThinkMode thinkMode;
-        if (thinkStr == null) {
-            thinkMode = OllamaThinkMode.HIGH;
-        } else {
-            thinkMode = switch (thinkStr.trim().toLowerCase()) {
-                case "false", "0" -> isGptOss ? OllamaThinkMode.LOW : OllamaThinkMode.OFF;
-                case "true", "1", "high" -> OllamaThinkMode.HIGH;
-                case "off", "none" -> OllamaThinkMode.OFF;
-                case "low" -> OllamaThinkMode.LOW;
-                case "medium" -> OllamaThinkMode.MEDIUM;
-                default -> throw new IllegalArgumentException("Invalid ollama.think value: " + thinkStr);
-            };
+        // Accept both "local.host" and legacy "ollama.host" / "llama-server.host"
+        String localHost = props.getProperty("local.host");
+        if (localHost == null) {
+            localHost = props.getProperty("llama-server.host");
         }
-        return thinkMode;
-    }
-
-    /**
-     * Returns configured ollama think mode (nullable if not configured).
-     */
-    @Override
-    public OllamaThinkMode ollamaThinkMode() {
-        return ollamaThinkMode;
-    }
-
-    /**
-     * Returns effective think mode based on model.
-     *
-     * <p>Note: since 0.4.3+ we default to HIGH (thinking enabled) unless configured.
-     */
-    public OllamaThinkMode getEffectiveOllamaThinkMode() {
-        if (ollamaThinkMode != null) {
-            return ollamaThinkMode;
+        if (localHost == null) {
+            localHost = props.getProperty("ollama.host");
         }
-        return OllamaThinkMode.HIGH;
+        if (localHost == null) {
+            localHost = "http://127.0.0.1:8080";
+        }
+
+        // HuggingFace model for auto-launching llama-server
+        String llamaServerModel = props.getProperty("local.llama-server-model");
+        if (llamaServerModel == null) {
+            llamaServerModel = props.getProperty("llama-server.model");
+        }
+
+        return new AiConfig(provider, model, apiKey, localHost, llamaServerModel);
     }
 
-    public boolean isOllama() {
-        return provider == Provider.OLLAMA;
+    public boolean isLocal() {
+        return provider == Provider.LOCAL;
     }
 
     /**

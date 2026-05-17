@@ -28,7 +28,7 @@ import java.util.Map;
 )
 public class AiCommand extends BaseAnalyzerCommand {
 
-    @Option(names = "--local", description = "Use local Ollama provider (overrides config)")
+    @Option(names = "--local", description = "Use local OpenAI-compatible provider (overrides config)")
     private boolean useLocal;
 
     @Option(names = "--remote", description = "Use remote Gardener AI provider (overrides config)")
@@ -59,8 +59,11 @@ public class AiCommand extends BaseAnalyzerCommand {
     @Option(names = "--short", description = "Create a succinct summary of the analysis")
     private boolean shortMode;
 
-    @Option(names = "--thinking", description = "Show thinking tokens (Ollama only)")
+    @Option(names = "--think", description = "Show thinking/reasoning tokens (local provider only)")
     private boolean showThinking;
+
+    @Option(names = "--no-tools", description = "Disable automatic tool calling")
+    private boolean noTools;
 
     private Analyzer analyzer;
 
@@ -90,7 +93,10 @@ public class AiCommand extends BaseAnalyzerCommand {
         options.put("raw", raw);
         options.put("dry-run", dryRun);
         options.put("short", shortMode);
-        options.put("thinking", showThinking);
+        options.put("think", showThinking);
+        if (noTools) {
+            options.put("no-tools", true);
+        }
 
         // Handle question (with stdin support)
         if (question != null) {

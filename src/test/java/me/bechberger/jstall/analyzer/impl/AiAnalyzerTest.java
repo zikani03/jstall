@@ -43,7 +43,7 @@ class AiAnalyzerTest {
         assertTrue(supported.contains("model"));
         assertTrue(supported.contains("question"));
         assertTrue(supported.contains("raw"));
-        assertTrue(supported.contains("thinking"));
+        assertTrue(supported.contains("think"));
 
         // Should include options from StatusAnalyzer
         assertTrue(supported.contains("keep"));
@@ -197,6 +197,165 @@ class AiAnalyzerTest {
     }
 
     // Mock implementation of LlmProvider for testing
+    private static class StreamingMockLlmProvider implements LlmProvider {
+        private final List<String> tokens;
+        private String lastModel;
+        private List<Message> lastMessages;
+
+        StreamingMockLlmProvider(List<String> tokens) {
+            this.tokens = tokens;
+        }
+
+        @Override
+        public boolean supportsStreaming() {
+            return true;
+        }
+
+        @Override
+        public String chat(String model, List<Message> messages, StreamHandlers handlers)
+                throws IOException, LlmException {
+            this.lastModel = model;
+            this.lastMessages = new ArrayList<>(messages);
+            StringBuilder full = new StringBuilder();
+            for (String token : tokens) {
+                if (handlers != null && handlers.responseHandler() != null) {
+                    handlers.responseHandler().accept(token);
+                }
+                full.append(token);
+            }
+            return full.toString();
+        }
+
+        @Override
+        public String getRawResponse(String model, List<Message> messages)
+                throws IOException, LlmException {
+            return "{}";
+        }
+    }
+
+    @Test
+    void testStreamingWithoutThinkTags() {
+        // Normal streaming: all content should be output
+        var streamingProvider = new StreamingMockLlmProvider(
+            List.of("Hello", " world", "!")
+        );
+        var aiAnalyzer = new AiAnalyzer(streamingProvider);
+
+        List<ThreadDumpSnapshot> dumps = createTestDumps(2);
+        AnalyzerResult result = aiAnalyzer.analyze(ResolvedData.fromDumps(dumps), Map.of());
+
+        assertEquals(0, result.exitCode());
+        // Streaming provider returns empty result (output already printed)
+        assertEquals("", result.output());
+    }
+
+    @Test
+    void testStreamingWithThinkTags() {
+        // Model that uses <think> tags: thinking should be suppressed by default
+        var streamingProvider = new StreamingMockLlmProvider(
+            List.of("<think>", "Let me analyze", "</think>", "The app is healthy.")
+        );
+        var aiAnalyzer = new AiAnalyzer(streamingProvider);
+
+        List<ThreadDumpSnapshot> dumps = createTestDumps(2);
+        AnalyzerResult result = aiAnalyzer.analyze(ResolvedData.fromDumps(dumps), Map.of());
+
+        assertEquals(0, result.exitCode());
+    }
+
+    @Test
+    void testStreamingWithSplitThinkTags() {
+        // <think> tag split across multiple tokens: "<thi" + "nk>" + "reasoning" + "</th" + "ink>"
+        var streamingProvider = new StreamingMockLlmProvider(
+            List.of("<thi", "nk>", "reasoning here", "</th", "ink>", "Visible answer")
+        );
+        var aiAnalyzer = new AiAnalyzer(streamingProvider);
+
+        List<ThreadDumpSnapshot> dumps = createTestDumps(2);
+        AnalyzerResult result = aiAnalyzer.analyze(ResolvedData.fromDumps(dumps), Map.of());
+
+        assertEquals(0, result.exitCode());
+        // Output should be empty (streamed to stdout) but thinking should have been suppressed
+    }
+
+    @Test
+    void testStreamingWithThinkTagsInMiddleOfContent() {
+        // Content before and after think block
+        var streamingProvider = new StreamingMockLlmProvider(
+            List.of("Start ", "<think>", "internal reasoning", "</think>", " End")
+        );
+        var aiAnalyzer = new AiAnalyzer(streamingProvider);
+
+        List<ThreadDumpSnapshot> dumps = createTestDumps(2);
+        AnalyzerResult result = aiAnalyzer.analyze(ResolvedData.fromDumps(dumps), Map.of());
+
+        assertEquals(0, result.exitCode());
+    }
+
+    @Test
+    void testDryRunMode() {
+        mockProvider.setResponse("should not be called");
+        mockProvider.setSupportsStreaming(false);
+
+        List<ThreadDumpSnapshot> dumps = createTestDumps(2);
+        Map<String, Object> options = new java.util.HashMap<>();
+        options.put("dry-run", true);
+        options.put("model", "test-model");
+
+        AnalyzerResult result = analyzer.analyze(ResolvedData.fromDumps(dumps), options);
+
+        assertEquals(0, result.exitCode());
+        assertTrue(result.output().contains("DRY RUN"));
+        assertTrue(result.output().contains("test-model"));
+        assertTrue(result.output().contains("System Prompt"));
+        // Provider should not have been called
+        assertNull(mockProvider.getLastModel());
+    }
+
+    @Test
+    void testNoToolsOption() {
+        mockProvider.setResponse("Analysis without tools");
+        mockProvider.setSupportsStreaming(false);
+
+        List<ThreadDumpSnapshot> dumps = createTestDumps(2);
+        Map<String, Object> options = new java.util.HashMap<>();
+        options.put("no-tools", true);
+
+        AnalyzerResult result = analyzer.analyze(ResolvedData.fromDumps(dumps), options);
+
+        assertEquals(0, result.exitCode());
+        // System prompt should NOT contain tool addendum
+        List<LlmProvider.Message> messages = mockProvider.getLastMessages();
+        assertNotNull(messages);
+        LlmProvider.Message systemMsg = messages.stream()
+            .filter(m -> m.role().equals("system")).findFirst().orElseThrow();
+        assertFalse(systemMsg.content().contains("You have tools"));
+    }
+
+    @Test
+    void testAdditionalInstructionsIncluded() {
+        mockProvider.setResponse("Response");
+        mockProvider.setSupportsStreaming(false);
+
+        List<ThreadDumpSnapshot> dumps = createTestDumps(2);
+        analyzer.analyze(ResolvedData.fromDumps(dumps), Map.of());
+
+        List<LlmProvider.Message> messages = mockProvider.getLastMessages();
+        assertNotNull(messages);
+        // The user prompt should contain additional instructions from provider
+        LlmProvider.Message userMsg = messages.stream()
+            .filter(m -> m.role().equals("user")).findFirst().orElseThrow();
+        assertTrue(userMsg.content().contains("test additional instructions"));
+    }
+
+    @Test
+    void testSupportedOptionsIncludeNoTools() {
+        Set<String> supported = analyzer.supportedOptions();
+        assertTrue(supported.contains("no-tools"));
+        assertTrue(supported.contains("tools"));
+    }
+
+    // Mock implementation of LlmProvider for testing
     private static class MockLlmProvider implements LlmProvider {
         private String response;
         private String rawResponse;
@@ -256,6 +415,11 @@ class AiAnalyzerTest {
         @Override
         public boolean supportsStreaming() {
             return supportsStreaming;
+        }
+
+        @Override
+        public String getAdditionalInstructions() {
+            return "test additional instructions";
         }
 
         @Override

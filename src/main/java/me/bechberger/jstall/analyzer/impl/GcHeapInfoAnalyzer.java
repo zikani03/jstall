@@ -1,14 +1,12 @@
 package me.bechberger.jstall.analyzer.impl;
 
 import me.bechberger.jstall.analyzer.Analyzer;
-import me.bechberger.jstall.analyzer.AnalyzerOutput;
 import me.bechberger.jstall.analyzer.AnalyzerResult;
-import me.bechberger.jstall.analyzer.Cell;
 import me.bechberger.jstall.analyzer.DumpRequirement;
 import me.bechberger.jstall.analyzer.ResolvedData;
-import me.bechberger.jstall.analyzer.TableModel;
 import me.bechberger.jstall.provider.requirement.CollectedData;
 import me.bechberger.jstall.provider.requirement.DataRequirements;
+import me.bechberger.jstall.util.TablePrinter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,8 +50,8 @@ public class GcHeapInfoAnalyzer implements Analyzer {
 
     @Override
     public AnalyzerResult analyze(ResolvedData data, Map<String, Object> options) {
-        AnalyzerOutput output = buildGcHeapInfoOutput(data.collectedData("gc-heap-info"));
-        if (output == null) {
+        String output = formatGcHeapInfoAnalysis(data.collectedData("gc-heap-info"));
+        if (output.isEmpty()) {
             return AnalyzerResult.nothing();
         }
         return AnalyzerResult.ok(output);
@@ -79,14 +77,14 @@ public class GcHeapInfoAnalyzer implements Analyzer {
         return defaultValue;
     }
 
-    private AnalyzerOutput buildGcHeapInfoOutput(List<CollectedData> samples) {
+    private String formatGcHeapInfoAnalysis(List<CollectedData> samples) {
         if (samples == null || samples.isEmpty()) {
-            return null;
+            return "";
         }
 
         HeapInfo latest = parseGcHeapInfo(samples.get(samples.size() - 1).rawData());
         if (latest == null) {
-            return null;
+            return "";
         }
 
         HeapInfo previous = null;
@@ -97,54 +95,49 @@ public class GcHeapInfoAnalyzer implements Analyzer {
         List<Row> rows = new ArrayList<>();
         final HeapInfo prev = previous;
         rows.add(new Row("Heap total", formatKib(latest.heapTotalK()), formatHumanKib(latest.heapTotalK()),
-            formatDelta(latest.heapTotalK(), prev == null ? null : prev.heapTotalK()), (double) latest.heapTotalK()));
+            formatDelta(latest.heapTotalK(), prev == null ? null : prev.heapTotalK())));
         rows.add(new Row("Heap used",
             formatKib(latest.heapUsedK()) + " | " + String.format(Locale.ROOT, "%.1f%%", latest.heapUsagePercent()),
             formatHumanKib(latest.heapUsedK()),
-            formatDelta(latest.heapUsedK(), prev == null ? null : prev.heapUsedK()), (double) latest.heapUsedK()));
+            formatDelta(latest.heapUsedK(), prev == null ? null : prev.heapUsedK())));
         if (latest.youngRegionCount() != null && latest.youngRegionTotalK() != null) {
             rows.add(new Row("Young regions",
                 latest.youngRegionCount() + " regions, " + formatKib(latest.youngRegionTotalK()),
                 formatHumanKib(latest.youngRegionTotalK()),
-                formatDelta(latest.youngRegionTotalK(), prev == null ? null : prev.youngRegionTotalK()), (double) latest.youngRegionTotalK()));
+                formatDelta(latest.youngRegionTotalK(), prev == null ? null : prev.youngRegionTotalK())));
             rows.add(new Row("Survivor regions",
                 latest.survivorRegionCount() + " regions, " + formatKib(latest.survivorRegionTotalK()),
                 formatHumanKib(latest.survivorRegionTotalK()),
-                formatDelta(latest.survivorRegionTotalK(), prev == null ? null : prev.survivorRegionTotalK()), (double) latest.survivorRegionTotalK()));
+                formatDelta(latest.survivorRegionTotalK(), prev == null ? null : prev.survivorRegionTotalK())));
         }
         if (latest.metaspaceCommittedK() != null) {
             rows.add(new Row("Metaspace used", formatKib(latest.metaspaceUsedK()), formatHumanKib(latest.metaspaceUsedK()),
-                formatDelta(latest.metaspaceUsedK(), prev == null ? null : prev.metaspaceUsedK()), latest.metaspaceUsedK() == null ? null : (double) latest.metaspaceUsedK()));
+                formatDelta(latest.metaspaceUsedK(), prev == null ? null : prev.metaspaceUsedK())));
             rows.add(new Row("Metaspace committed", formatKib(latest.metaspaceCommittedK()), formatHumanKib(latest.metaspaceCommittedK()),
-                formatDelta(latest.metaspaceCommittedK(), prev == null ? null : prev.metaspaceCommittedK()), latest.metaspaceCommittedK() == null ? null : (double) latest.metaspaceCommittedK()));
+                formatDelta(latest.metaspaceCommittedK(), prev == null ? null : prev.metaspaceCommittedK())));
             rows.add(new Row("Metaspace reserved", formatKib(latest.metaspaceReservedK()), formatHumanKib(latest.metaspaceReservedK()),
-                formatDelta(latest.metaspaceReservedK(), prev == null ? null : prev.metaspaceReservedK()), latest.metaspaceReservedK() == null ? null : (double) latest.metaspaceReservedK()));
+                formatDelta(latest.metaspaceReservedK(), prev == null ? null : prev.metaspaceReservedK())));
         }
         if (latest.classSpaceCommittedK() != null) {
             rows.add(new Row("Class space used", formatKib(latest.classSpaceUsedK()), formatHumanKib(latest.classSpaceUsedK()),
-                formatDelta(latest.classSpaceUsedK(), prev == null ? null : prev.classSpaceUsedK()), latest.classSpaceUsedK() == null ? null : (double) latest.classSpaceUsedK()));
+                formatDelta(latest.classSpaceUsedK(), prev == null ? null : prev.classSpaceUsedK())));
             rows.add(new Row("Class space committed", formatKib(latest.classSpaceCommittedK()), formatHumanKib(latest.classSpaceCommittedK()),
-                formatDelta(latest.classSpaceCommittedK(), prev == null ? null : prev.classSpaceCommittedK()), latest.classSpaceCommittedK() == null ? null : (double) latest.classSpaceCommittedK()));
+                formatDelta(latest.classSpaceCommittedK(), prev == null ? null : prev.classSpaceCommittedK())));
             rows.add(new Row("Class space reserved", formatKib(latest.classSpaceReservedK()), formatHumanKib(latest.classSpaceReservedK()),
-                formatDelta(latest.classSpaceReservedK(), prev == null ? null : prev.classSpaceReservedK()), latest.classSpaceReservedK() == null ? null : (double) latest.classSpaceReservedK()));
+                formatDelta(latest.classSpaceReservedK(), prev == null ? null : prev.classSpaceReservedK())));
         }
 
-        TableModel.Builder table = TableModel.builder()
-            .addColumn("Metric", TableModel.Alignment.LEFT)
-            .addColumn("Value", TableModel.Alignment.RIGHT)
-            .addColumn("Details", TableModel.Alignment.LEFT)
-            .addColumn("Δ", TableModel.Alignment.RIGHT);
+        TablePrinter table = new TablePrinter()
+            .addColumn("Metric", TablePrinter.Alignment.LEFT)
+            .addColumn("Value", TablePrinter.Alignment.RIGHT)
+            .addColumn("Details", TablePrinter.Alignment.LEFT)
+            .addColumn("Δ", TablePrinter.Alignment.RIGHT);
 
         for (Row row : rows) {
-            table.addRow(
-                Cell.text(row.metric()),
-                row.sortValue() != null ? Cell.number(row.value(), row.sortValue()) : Cell.text(row.value()),
-                Cell.text(row.details()),
-                Cell.text(row.delta())
-            );
+            table.addRow(row.metric(), row.value(), row.details(), row.delta());
         }
 
-        return new AnalyzerOutput.TableOutput(List.of("GC.heap_info (last dump absolute + change):"), table.build());
+        return "GC.heap_info (last dump absolute + change):\n" + table.render();
     }
 
         private String formatKib(Long kib) {
@@ -300,6 +293,6 @@ public class GcHeapInfoAnalyzer implements Analyzer {
         }
     }
 
-    private record Row(String metric, String value, String details, String delta, Double sortValue) {
+    private record Row(String metric, String value, String details, String delta) {
     }
 }

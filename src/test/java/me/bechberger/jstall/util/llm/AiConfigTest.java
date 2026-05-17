@@ -2,82 +2,157 @@ package me.bechberger.jstall.util.llm;
 
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AiConfigTest {
 
     @Test
-    void testOllamaThinkParsing() throws Exception {
+    void testLocalProviderFromProperties() {
         Properties p = new Properties();
-        p.setProperty("provider", "ollama");
-        p.setProperty("model", "gpt-oss:latest");
-        p.setProperty("ollama.host", "http://127.0.0.1:11434");
-        p.setProperty("ollama.think", "medium");
+        p.setProperty("provider", "local");
+        p.setProperty("model", "my-model");
+        p.setProperty("local.host", "http://localhost:9090");
 
-        AiConfig cfg = fromProperties(p);
-        assertThat(cfg.ollamaThinkMode()).isEqualTo(AiConfig.OllamaThinkMode.MEDIUM);
-        assertThat(cfg.getEffectiveOllamaThinkMode()).isEqualTo(AiConfig.OllamaThinkMode.MEDIUM);
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.provider()).isEqualTo(AiConfig.Provider.LOCAL);
+        assertThat(cfg.model()).isEqualTo("my-model");
+        assertThat(cfg.localHost()).isEqualTo("http://localhost:9090");
+        assertThat(cfg.isLocal()).isTrue();
     }
 
     @Test
-    void testOllamaThinkDefaultForGptOssIsHigh() throws Exception {
+    void testGardenerProviderFromProperties() {
         Properties p = new Properties();
-        p.setProperty("provider", "ollama");
-        p.setProperty("model", "gpt-oss:latest");
+        p.setProperty("provider", "gardener");
+        p.setProperty("model", "gpt-50-nano");
+        p.setProperty("api.key", "test-key");
 
-        AiConfig cfg = fromProperties(p);
-        assertThat(cfg.ollamaThinkMode()).isEqualTo(AiConfig.OllamaThinkMode.HIGH);
-        assertThat(cfg.getEffectiveOllamaThinkMode()).isEqualTo(AiConfig.OllamaThinkMode.HIGH);
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.provider()).isEqualTo(AiConfig.Provider.GARDENER);
+        assertThat(cfg.model()).isEqualTo("gpt-50-nano");
+        assertThat(cfg.apiKey()).isEqualTo("test-key");
+        assertThat(cfg.isLocal()).isFalse();
     }
 
     @Test
-    void testOllamaThinkDefaultForOtherModelsIsHigh() throws Exception {
+    void testDefaultProviderIsGardener() {
         Properties p = new Properties();
-        p.setProperty("provider", "ollama");
-        p.setProperty("model", "qwen3:30b");
 
-        AiConfig cfg = fromProperties(p);
-        assertThat(cfg.ollamaThinkMode()).isEqualTo(AiConfig.OllamaThinkMode.HIGH);
-        assertThat(cfg.getEffectiveOllamaThinkMode()).isEqualTo(AiConfig.OllamaThinkMode.HIGH);
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.provider()).isEqualTo(AiConfig.Provider.GARDENER);
+        assertThat(cfg.model()).isEqualTo("gpt-50-nano");
     }
 
     @Test
-    void testOllamaThinkBooleanMappingForGptOss() throws Exception {
-        Properties pTrue = new Properties();
-        pTrue.setProperty("provider", "ollama");
-        pTrue.setProperty("model", "gpt-oss:latest");
-        pTrue.setProperty("ollama.think", "true");
-        AiConfig cfgTrue = fromProperties(pTrue);
-        assertThat(cfgTrue.getEffectiveOllamaThinkMode()).isEqualTo(AiConfig.OllamaThinkMode.HIGH);
+    void testDefaultModelForLocal() {
+        Properties p = new Properties();
+        p.setProperty("provider", "local");
 
-        Properties pFalse = new Properties();
-        pFalse.setProperty("provider", "ollama");
-        pFalse.setProperty("model", "gpt-oss:latest");
-        pFalse.setProperty("ollama.think", "false");
-        AiConfig cfgFalse = fromProperties(pFalse);
-        assertThat(cfgFalse.getEffectiveOllamaThinkMode()).isEqualTo(AiConfig.OllamaThinkMode.LOW);
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.model()).isEqualTo("local");
     }
 
     @Test
-    void testOllamaThinkInvalidValue() {
+    void testDefaultLocalHost() {
         Properties p = new Properties();
-        p.setProperty("provider", "ollama");
-        p.setProperty("model", "qwen3:30b");
-        p.setProperty("ollama.think", "nope");
+        p.setProperty("provider", "local");
 
-        assertThatThrownBy(() -> fromProperties(p))
-            .hasRootCauseInstanceOf(IllegalArgumentException.class)
-            .rootCause()
-            .hasMessageContaining("Invalid ollama.think value");
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.localHost()).isEqualTo("http://127.0.0.1:8080");
     }
 
-    private static AiConfig fromProperties(Properties props) throws Exception {
-        Method m = AiConfig.class.getDeclaredMethod("fromProperties", Properties.class);
-        m.setAccessible(true);
-        return (AiConfig) m.invoke(null, props);
+    @Test
+    void testLlamaServerModelProperty() {
+        Properties p = new Properties();
+        p.setProperty("provider", "local");
+        p.setProperty("local.llama-server-model", "AaryanK/Qwen3.5-9B-GGUF:Q8_0");
+
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.llamaServerModel()).isEqualTo("AaryanK/Qwen3.5-9B-GGUF:Q8_0");
+    }
+
+    @Test
+    void testLlamaServerModelPropertyLegacy() {
+        Properties p = new Properties();
+        p.setProperty("provider", "local");
+        p.setProperty("llama-server.model", "AaryanK/Qwen3.5-9B-GGUF:Q8_0");
+
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.llamaServerModel()).isEqualTo("AaryanK/Qwen3.5-9B-GGUF:Q8_0");
+    }
+
+    @Test
+    void testNoLlamaServerModelByDefault() {
+        Properties p = new Properties();
+        p.setProperty("provider", "local");
+
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.llamaServerModel()).isNull();
+    }
+
+    // Backward compatibility: legacy provider names map to LOCAL
+
+    @Test
+    void testOllamaProviderMapsToLocal() {
+        Properties p = new Properties();
+        p.setProperty("provider", "ollama");
+
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.provider()).isEqualTo(AiConfig.Provider.LOCAL);
+        assertThat(cfg.isLocal()).isTrue();
+    }
+
+    @Test
+    void testLlamaServerProviderMapsToLocal() {
+        Properties p = new Properties();
+        p.setProperty("provider", "llama-server");
+
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.provider()).isEqualTo(AiConfig.Provider.LOCAL);
+    }
+
+    @Test
+    void testLlamaServerUnderscoreProviderMapsToLocal() {
+        Properties p = new Properties();
+        p.setProperty("provider", "llama_server");
+
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.provider()).isEqualTo(AiConfig.Provider.LOCAL);
+    }
+
+    // Backward compatibility: legacy host property names
+
+    @Test
+    void testLegacyOllamaHostFallback() {
+        Properties p = new Properties();
+        p.setProperty("provider", "local");
+        p.setProperty("ollama.host", "http://localhost:11434");
+
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.localHost()).isEqualTo("http://localhost:11434");
+    }
+
+    @Test
+    void testLegacyLlamaServerHostFallback() {
+        Properties p = new Properties();
+        p.setProperty("provider", "local");
+        p.setProperty("llama-server.host", "http://localhost:9999");
+
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.localHost()).isEqualTo("http://localhost:9999");
+    }
+
+    @Test
+    void testLocalHostTakesPrecedenceOverLegacy() {
+        Properties p = new Properties();
+        p.setProperty("provider", "local");
+        p.setProperty("local.host", "http://localhost:8080");
+        p.setProperty("ollama.host", "http://localhost:11434");
+        p.setProperty("llama-server.host", "http://localhost:9999");
+
+        AiConfig cfg = AiConfig.fromProperties(p);
+        assertThat(cfg.localHost()).isEqualTo("http://localhost:8080");
     }
 }
