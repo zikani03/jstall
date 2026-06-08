@@ -75,9 +75,15 @@ public class MostWorkAnalyzer extends BaseAnalyzer {
 
         // Display combined metrics at the top
         if (totalCpuTimeSec >= 0.001) {
-            sb.append("Combined CPU time: ").append(String.format(Locale.US, "%.2fs", totalCpuTimeSec));
+            String totalCpuStr = totalCpuTimeSec < 0.01
+                ? String.format(Locale.US, "%.4fs", totalCpuTimeSec)
+                : String.format(Locale.US, "%.2fs", totalCpuTimeSec);
+            sb.append("Combined CPU time: ").append(totalCpuStr);
             if (elapsedTimeSec > 0) {
-                sb.append(", Elapsed time: ").append(String.format(Locale.US, "%.2fs", elapsedTimeSec));
+                String elapsedStr = elapsedTimeSec < 0.01
+                    ? String.format(Locale.US, "%.4fs", elapsedTimeSec)
+                    : String.format(Locale.US, "%.2fs", elapsedTimeSec);
+                sb.append(", Elapsed time: ").append(elapsedStr);
                 double overallUtilization = (totalCpuTimeSec * 100.0) / elapsedTimeSec;
                 sb.append(String.format(Locale.US, " (%.1f%% total CPU / wall-clock, sums all cores)", overallUtilization));
             }
@@ -92,18 +98,22 @@ public class MostWorkAnalyzer extends BaseAnalyzer {
 
             // Display CPU time metrics if available
             if (activity.hasCpuTime()) {
-                sb.append("   CPU time: ").append(String.format(Locale.US, "%.2fs", activity.getTotalCpuTimeSec()));
+                double cpuSec = activity.getTotalCpuTimeSec();
+                String cpuStr = cpuSec < 0.01
+                    ? String.format(Locale.US, "%.4fs", cpuSec)
+                    : String.format(Locale.US, "%.2fs", cpuSec);
+                sb.append("   CPU time: ").append(cpuStr);
 
                 // Display CPU percentage if there's total CPU time
                 if (totalCpuTimeSec >= 0.001) {
-                    double cpuPercentage = (activity.getTotalCpuTimeSec() * 100.0) / totalCpuTimeSec;
+                    double cpuPercentage = (cpuSec * 100.0) / totalCpuTimeSec;
                     sb.append(String.format(Locale.US, " (%.1f%% of total)", cpuPercentage));
                 }
                 sb.append("\n");
 
                 // Display core utilization if elapsed time is available
                 if (elapsedTimeSec > 0) {
-                    double coreUtilization = (activity.getTotalCpuTimeSec() * 100.0) / elapsedTimeSec;
+                    double coreUtilization = (cpuSec * 100.0) / elapsedTimeSec;
                     sb.append("   Core utilization: ").append(String.format(Locale.US, "%.1f%%", coreUtilization));
 
                     // Add approximate core count
