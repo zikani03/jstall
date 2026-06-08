@@ -31,6 +31,7 @@
   },
   "files": [
     "dist/",
+    "!dist/__tests__/",
     "lib/jstall.jar",
     "lib/.version",
     "skills/",

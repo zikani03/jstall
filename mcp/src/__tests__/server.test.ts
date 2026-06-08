@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // We intercept Server so connect() is instant and the stdio transport never opens.
 
 vi.mock('@modelcontextprotocol/sdk/server/index.js', () => {
-    function Server() {
+    function Server(this: Record<string, unknown>) {
         this.setRequestHandler = () => {};
         this.connect = vi.fn().mockResolvedValue(undefined);
     }
