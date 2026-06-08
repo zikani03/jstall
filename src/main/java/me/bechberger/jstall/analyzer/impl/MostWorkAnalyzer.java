@@ -25,7 +25,7 @@ public class MostWorkAnalyzer extends BaseAnalyzer {
 
     @Override
     public Set<String> supportedOptions() {
-        return Set.of("dump-count", "interval", "keep", "top", "no-native", "stack-depth");
+        return Set.of("dump-count", "interval", "keep", "top", "no-native", "stack-depth", "intelligent-filter");
     }
 
     @Override
@@ -39,6 +39,7 @@ public class MostWorkAnalyzer extends BaseAnalyzer {
         int topN = getIntOption(options, "top", 3);
         boolean ignoreEmptyStacks = getNoNativeOption(options);
         int stackDepth = getStackDepthOption(options);
+        boolean intelligentFilter = getIntelligentFilterOption(options);
 
         // Track thread activity across dumps using base class
         Map<Long, ThreadActivity> threadActivities = trackThreadActivity(
@@ -61,10 +62,10 @@ public class MostWorkAnalyzer extends BaseAnalyzer {
         // Sort threads using base class method
         List<ThreadActivity> topThreads = sortThreadsByCpuTime(threadActivities.values(), topN);
 
-        return AnalyzerResult.ok(formatAsText(topThreads, dumps.size(), totalCpuTimeSec, elapsedTimeSec, stackDepth));
+        return AnalyzerResult.ok(formatAsText(topThreads, dumps.size(), totalCpuTimeSec, elapsedTimeSec, stackDepth, intelligentFilter));
     }
 
-    private String formatAsText(List<ThreadActivity> topThreads, int totalDumps, double totalCpuTimeSec, double elapsedTimeSec, int stackDepth) {
+    private String formatAsText(List<ThreadActivity> topThreads, int totalDumps, double totalCpuTimeSec, double elapsedTimeSec, int stackDepth, boolean intelligentFilter) {
         if (topThreads.isEmpty()) {
             return "No threads found";
         }
@@ -127,7 +128,19 @@ public class MostWorkAnalyzer extends BaseAnalyzer {
             }
 
             // Show common stack prefix
-            if (!activity.stackTraces.isEmpty()) {
+            if (!activity.threadInfos.isEmpty()) {
+                ThreadInfo firstThread = activity.threadInfos.get(0);
+                if (firstThread.stackTrace() != null && !firstThread.stackTrace().isEmpty()) {
+                    String formatted = formatStackTraceFromFrames(
+                        firstThread.stackTrace(),
+                        stackDepth,
+                        intelligentFilter,
+                        "   ",
+                        "Common stack prefix:"
+                    );
+                    sb.append(formatted);
+                }
+            } else if (!activity.stackTraces.isEmpty()) {
                 String commonStack = activity.getCommonStackPrefix();
                 String formatted = formatStackTrace(commonStack, stackDepth, "   ", "Common stack prefix:");
                 sb.append(formatted);

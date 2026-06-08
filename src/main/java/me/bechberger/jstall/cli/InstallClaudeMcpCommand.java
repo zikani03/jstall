@@ -42,7 +42,8 @@ public class InstallClaudeMcpCommand implements java.util.concurrent.Callable<In
         Map<String, Object> root;
         if (Files.exists(settings)) {
             try {
-                Object parsed = JSONParser.parse(Files.readString(settings));
+                String content = stripJsonComments(Files.readString(settings));
+                Object parsed = JSONParser.parse(content);
                 if (!(parsed instanceof Map)) {
                     System.err.println(settings + " does not contain a JSON object.");
                     return 1;
@@ -89,5 +90,44 @@ public class InstallClaudeMcpCommand implements java.util.concurrent.Callable<In
         System.out.println("Registered jstall MCP server in " + settings);
         System.out.println("Restart Claude Code to activate.");
         return 0;
+    }
+
+    /** Strips line comments (// ...) and block comments (/* ... *\/) from JSON, preserving strings. */
+    private static String stripJsonComments(String json) {
+        StringBuilder out = new StringBuilder(json.length());
+        int i = 0;
+        boolean inString = false;
+        while (i < json.length()) {
+            char c = json.charAt(i);
+            if (inString) {
+                out.append(c);
+                if (c == '\\' && i + 1 < json.length()) {
+                    out.append(json.charAt(++i));
+                } else if (c == '"') {
+                    inString = false;
+                }
+            } else if (c == '"') {
+                inString = true;
+                out.append(c);
+            } else if (c == '/' && i + 1 < json.length() && json.charAt(i + 1) == '/') {
+                // Line comment — skip until end of line
+                while (i < json.length() && json.charAt(i) != '\n') {
+                    i++;
+                }
+                continue;
+            } else if (c == '/' && i + 1 < json.length() && json.charAt(i + 1) == '*') {
+                // Block comment — skip until */
+                i += 2;
+                while (i + 1 < json.length() && !(json.charAt(i) == '*' && json.charAt(i + 1) == '/')) {
+                    i++;
+                }
+                i += 2;
+                continue;
+            } else {
+                out.append(c);
+            }
+            i++;
+        }
+        return out.toString();
     }
 }
