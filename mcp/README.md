@@ -197,6 +197,7 @@ git clone https://github.com/parttimenerd/jstall
 cd jstall/mcp
 npm install          # downloads jstall.jar and compiles TypeScript
 npm run build        # compile TypeScript only
+npm test             # run test suite (77 tests; integration tests skip if JAR absent)
 ```
 
 To use a local jstall build instead of downloading:
@@ -205,6 +206,19 @@ To use a local jstall build instead of downloading:
 cd jstall && mvn package -DskipTests
 cd mcp && npm install   # picks up ../target/jstall.jar automatically
 ```
+
+## Publishing to npm
+
+1. Bump the version in `package.json` and `src/server.ts` to match the jstall release.
+2. Build and test:
+   ```bash
+   npm run build
+   npm test
+   ```
+3. Publish (requires npm OTP if 2FA is enabled):
+   ```bash
+   npm publish --access public --otp=<your-OTP>
+   ```
 
 ## License
 
