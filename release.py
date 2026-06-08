@@ -382,6 +382,9 @@ class VersionBumper:
         self.readme = project_root / "README.md"
         self.changelog = project_root / "CHANGELOG.md"
         self.jbang_catalog = project_root / "jbang-catalog.json"
+        self.mcp_package_json = project_root / "mcp" / "package.json"
+        self.mcp_server_ts = project_root / "mcp" / "src" / "server.ts"
+        self.mcp_dir = project_root / "mcp"
         self.backup_dir = project_root / ".release-backup"
         self.backups_created = False
 
@@ -450,6 +453,43 @@ class VersionBumper:
         )
         self.readme.write_text(content)
         print(f"✓ Updated README.md: {old_version} -> {new_version}")
+
+    def update_mcp_version(self, old_version: str, new_version: str):
+        """Update version in mcp/package.json and mcp/src/server.ts"""
+        if not self.mcp_package_json.exists():
+            print("⚠ mcp/package.json not found, skipping MCP version update")
+            return
+
+        pkg = self.mcp_package_json.read_text()
+        pkg = pkg.replace(f'"version": "{old_version}"', f'"version": "{new_version}"', 1)
+        self.mcp_package_json.write_text(pkg)
+        print(f"✓ Updated mcp/package.json: {old_version} -> {new_version}")
+
+        if self.mcp_server_ts.exists():
+            ts = self.mcp_server_ts.read_text()
+            ts = ts.replace(f"version: '{old_version}'", f"version: '{new_version}'")
+            self.mcp_server_ts.write_text(ts)
+            print(f"✓ Updated mcp/src/server.ts: {old_version} -> {new_version}")
+
+    def build_mcp(self):
+        """Build the MCP npm package (tsc)"""
+        if not self.mcp_dir.exists():
+            print("⚠ mcp/ directory not found, skipping MCP build")
+            return
+        self.run_command(['npm', 'run', 'build'], "Building MCP package", cwd=self.mcp_dir)
+
+    def publish_mcp(self):
+        """Publish @bechberger/jstall-mcp to npm"""
+        if not self.mcp_dir.exists():
+            print("⚠ mcp/ directory not found, skipping npm publish")
+            return
+        # npm_lifecycle_event != 'prepare' so download-jar won't skip the local fallback;
+        # set it explicitly so the JAR is always fetched from GitHub during publish.
+        env = {**__import__('os').environ, 'npm_lifecycle_event': 'prepare'}
+        self.run_command(['node', 'scripts/download-jar.cjs'], "Downloading JAR for npm publish",
+                         cwd=self.mcp_dir, env=env)
+        self.run_command(['npm', 'publish', '--access', 'public'], "Publishing @bechberger/jstall-mcp to npm",
+                         cwd=self.mcp_dir)
 
     def update_jbang_catalog(self, new_version: str):
         """Update version in jbang-catalog.json"""
@@ -749,12 +789,16 @@ java -jar jstall.jar <pid>
             self.main_java,
             self.readme,
             self.changelog,
-            self.jbang_catalog
+            self.jbang_catalog,
+            self.mcp_package_json,
+            self.mcp_server_ts,
         ]
 
         for file in files_to_backup:
             if file.exists():
-                backup_file = self.backup_dir / file.name
+                rel = file.relative_to(self.project_root)
+                backup_file = self.backup_dir / rel
+                backup_file.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(file, backup_file)
 
         self.backups_created = True
@@ -770,17 +814,21 @@ java -jar jstall.jar <pid>
         print("\n⚠️  Restoring files from backup...")
 
         files_to_restore = [
-            (self.backup_dir / "pom.xml", self.pom_xml),
-            (self.backup_dir / "Main.java", self.main_java),
-            (self.backup_dir / "README.md", self.readme),
-            (self.backup_dir / "CHANGELOG.md", self.changelog),
-            (self.backup_dir / "jbang-catalog.json", self.jbang_catalog)
+            self.pom_xml,
+            self.main_java,
+            self.readme,
+            self.changelog,
+            self.jbang_catalog,
+            self.mcp_package_json,
+            self.mcp_server_ts,
         ]
 
-        for backup_file, original_file in files_to_restore:
+        for original_file in files_to_restore:
+            rel = original_file.relative_to(self.project_root)
+            backup_file = self.backup_dir / rel
             if backup_file.exists():
                 shutil.copy2(backup_file, original_file)
-                print(f"  ✓ Restored {original_file.name}")
+                print(f"  ✓ Restored {rel}")
 
         print("✓ All files restored from backup")
 
@@ -792,11 +840,11 @@ java -jar jstall.jar <pid>
             shutil.rmtree(self.backup_dir)
             print("✓ Cleaned up backups")
 
-    def run_command(self, cmd: list, description: str, check=True) -> subprocess.CompletedProcess:
+    def run_command(self, cmd: list, description: str, check=True, cwd=None, env=None) -> subprocess.CompletedProcess:
         """Run a shell command"""
         print(f"\n→ {description}...")
-        print(f"  $ {' '.join(cmd)}")
-        result = subprocess.run(cmd, cwd=self.project_root, capture_output=True, text=True)
+        print(f"  $ {' '.join(str(c) for c in cmd)}")
+        result = subprocess.run(cmd, cwd=cwd or self.project_root, capture_output=True, text=True, env=env)
 
         if result.returncode != 0 and check:
             print(f"✗ Failed: {description}")
@@ -849,6 +897,8 @@ java -jar jstall.jar <pid>
         except Exception as e:
             print(f"⚠ Failed to build/copy jstall-minimal artifacts: {e}")
 
+        self.build_mcp()
+
     def deploy_release(self):
         """Deploy to Maven Central using release profile"""
         self.run_command(
@@ -863,10 +913,16 @@ java -jar jstall.jar <pid>
         except Exception as e:
             print(f"⚠ Failed to deploy jstall-minimal: {e}")
 
+    def deploy_npm(self):
+        """Publish MCP package to npm"""
+        self.publish_mcp()
+
     def git_commit(self, version: str):
         """Commit version changes"""
         self.run_command(
-            ['git', 'add', 'pom.xml', 'src/main/java/me/bechberger/jstall/Main.java', 'README.md', 'CHANGELOG.md', 'jbang-catalog.json'],
+            ['git', 'add', 'pom.xml', 'src/main/java/me/bechberger/jstall/Main.java',
+             'README.md', 'CHANGELOG.md', 'jbang-catalog.json',
+             'mcp/package.json', 'mcp/src/server.ts'],
             "Staging files"
         )
         self.run_command(
@@ -969,6 +1025,7 @@ def main():
     parser.add_argument('--patch', action='store_true', help='Bump patch version (0.0.x)')
     parser.add_argument('--no-deploy', action='store_true', help='Skip deployment to Maven Central (deploy is default)')
     parser.add_argument('--no-github-release', action='store_true', help='Skip GitHub release creation (github-release is default)')
+    parser.add_argument('--no-npm-publish', action='store_true', help='Skip npm publish of @bechberger/jstall-mcp')
     parser.add_argument('--no-push', action='store_true', help='Skip pushing to git remote (push is default)')
     parser.add_argument('--skip-tests', action='store_true', help='Skip running tests')
     parser.add_argument('--dry-run', action='store_true', help='Show what would happen without making changes')
@@ -1025,6 +1082,7 @@ def main():
     # Set defaults (deploy and github-release are ON by default)
     do_deploy = not args.no_deploy
     do_github_release = not args.no_github_release
+    do_npm_publish = not args.no_npm_publish
     do_push = not args.no_push
 
     # Validate changelog before proceeding (unless dry-run)
@@ -1065,6 +1123,8 @@ def main():
         print("  • mvn clean package")
         if do_deploy:
             print("  • mvn clean deploy -P release")
+        if do_npm_publish:
+            print("  • npm publish --access public  (mcp/)")
         print(f"  • git add pom.xml Main.java README.md CHANGELOG.md")
         print(f"  • git commit -m 'Bump version to {new_version}'")
         print(f"  • git tag -a v{new_version} -m 'Release {new_version}'")
@@ -1098,6 +1158,10 @@ def main():
         print(f"  {step}. Deploy to Maven Central")
         step += 1
 
+    if do_npm_publish:
+        print(f"  {step}. Publish @bechberger/jstall-mcp to npm")
+        step += 1
+
     print(f"  {step}. Commit and tag")
     step += 1
 
@@ -1125,6 +1189,7 @@ def main():
         bumper.update_main_java(current_version, new_version)
         bumper.update_readme(current_version, new_version)
         bumper.update_jbang_catalog(new_version)
+        bumper.update_mcp_version(current_version, new_version)
         bumper.update_changelog(new_version)
 
         # Sync documentation
@@ -1154,6 +1219,15 @@ def main():
                 do_deploy = False
             else:
                 bumper.deploy_release()
+
+        if do_npm_publish:
+            print("\n=== Publishing to npm ===")
+            response = input("Ready to publish @bechberger/jstall-mcp to npm? [y/N] ")
+            if response.lower() not in ['y', 'yes']:
+                print("Skipping npm publish.")
+                do_npm_publish = False
+            else:
+                bumper.deploy_npm()
 
         # Git operations
         print("\n=== Git operations ===")
@@ -1191,6 +1265,7 @@ def main():
     print(f"  ✓ Tests passed" if not args.skip_tests else "  ⊘ Tests skipped")
     print(f"  ✓ Package built")
     print(f"  ✓ Deployed to Maven Central" if do_deploy else "  ⊘ Deployment skipped")
+    print(f"  ✓ Published @bechberger/jstall-mcp to npm" if do_npm_publish else "  ⊘ npm publish skipped")
     print(f"  ✓ Git commit and tag created")
     print(f"  ✓ Pushed to remote" if do_push else "  ⊘ Push skipped")
     print(f"  ✓ GitHub release created" if do_github_release else "  ⊘ GitHub release skipped")
