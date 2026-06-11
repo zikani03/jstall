@@ -134,6 +134,7 @@ public class Main implements Runnable {
         System.out.println("  vm-metaspace      - Show VM metaspace info");
         System.out.println("  jvm-support       - Check whether the target JVM is likely still supported");
         System.out.println("  processes         - Show system processes");
+        System.out.println("  ai                - AI-powered thread dump analysis using LLM");
         System.out.println();
 
         if (replayFile != null) {
