@@ -344,7 +344,7 @@ while IFS=$'\t' read -r name main_class must_regex must_not_regex must_regex2; d
     # A line containing "no deadlock" or "deadlock: 0" or "not present" is fine (negation).
     if [[ "$name" == "healthy" ]]; then
         if grep -iE "(deadlock|contention|starvation|exhaust)" "$OUT" \
-                | grep -ivE "(no [a-z ]*(deadlock|contention)|0 deadlock|none detected|free of|absent|without|not present|not detected|not found|not observed|no signs of|no evidence of)" \
+                | grep -ivE "(no [a-z ]*(deadlock|contention)|not (a |an )?(deadlock|contention|starvation|exhaust)|0 deadlock|none detected|free of|absent|without|not present|not detected|not found|not observed|no signs of|no evidence of|indicating normal|normal blocking)" \
                 | grep -iE "(detected|found|present|observed|active|holding)" >/dev/null; then
             PASSED=false
             REASONS+=("false-positive on healthy app")
