@@ -34,25 +34,30 @@ public class SourceTools {
     private static final int MAX_READ_LINES = 500;
     private static final int MAX_LINE_LENGTH = 200;
 
-    /** Extra directories to search when the primary root yields no results. */
+    /** Temp directories to search when the primary root yields no results. Used for grep/list. */
+    private static final List<String> FALLBACK_TMP_ROOTS = buildFallbackTmpRoots();
+    /** All fallback directories (includes user.home) — for read_source_file by basename only. */
     private static final List<String> FALLBACK_ROOTS = buildFallbackRoots();
 
-    private static List<String> buildFallbackRoots() {
+    private static List<String> buildFallbackTmpRoots() {
         List<String> roots = new ArrayList<>();
-        // Add java.io.tmpdir (resolving symlinks so /tmp -> /private/tmp on macOS works)
         try {
             roots.add(Path.of(System.getProperty("java.io.tmpdir", "/tmp")).toRealPath().toString());
         } catch (IOException e) {
             roots.add(System.getProperty("java.io.tmpdir", "/tmp"));
         }
-        roots.add(System.getProperty("user.home", "/"));
-        // Add common temp directories (with symlink resolution)
         for (String candidate : new String[]{"/tmp", "/var/tmp"}) {
             try {
                 String real = Path.of(candidate).toRealPath().toString();
                 if (!roots.contains(real)) roots.add(real);
             } catch (IOException ignored) {}
         }
+        return List.copyOf(roots);
+    }
+
+    private static List<String> buildFallbackRoots() {
+        List<String> roots = new ArrayList<>(buildFallbackTmpRoots());
+        roots.add(System.getProperty("user.home", "/"));
         return List.copyOf(roots);
     }
 
@@ -126,9 +131,9 @@ public class SourceTools {
 
         List<String> results = searchInRoot(root, effectivePattern);
 
-        // If nothing found in primary root, try fallback directories
+        // If nothing found in primary root, try fallback tmp directories
         if (results.isEmpty()) {
-            for (String fallback : FALLBACK_ROOTS) {
+            for (String fallback : FALLBACK_TMP_ROOTS) {
                 Path fallbackPath = Path.of(fallback).toAbsolutePath().normalize();
                 if (fallbackPath.equals(root)) continue;
                 if (!Files.isDirectory(fallbackPath)) continue;
@@ -248,9 +253,9 @@ public class SourceTools {
 
         List<String> hits = grepInRoot(root, compiled, fileMatcher, flatFileMatcher);
 
-        // If no hits in primary root, try fallback directories
+        // If no hits in primary root, try fallback tmp directories
         if (hits.isEmpty()) {
-            for (String fallback : FALLBACK_ROOTS) {
+            for (String fallback : FALLBACK_TMP_ROOTS) {
                 Path fallbackPath = Path.of(fallback).toAbsolutePath().normalize();
                 if (fallbackPath.equals(root) || !Files.isDirectory(fallbackPath)) continue;
                 hits = grepInRoot(fallbackPath, compiled, fileMatcher, flatFileMatcher);
