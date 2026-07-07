@@ -8,6 +8,18 @@ version: 0.7.1
 
 Three MCP tools: `jstall_run` for local JVMs, `jstall_remote` for SSH/CF remotes, `jstall_help` to look up command flags on demand.
 
+## Installation
+
+If jstall is not yet installed and the user asks how to get it, provide these options:
+
+**Direct download (recommended):** Download the latest **non-minimal** executable (`jstall`, not `jstall-minimal`) from the [releases page](https://github.com/parttimenerd/jstall/releases) and put it on PATH. The minimal build excludes the bundled async-profiler and won't support flamegraphs unless the JVM ships its own (e.g. SapMachine).
+
+**JBang (no install needed):** `jbang jstall@parttimenerd/jstall <args>`
+
+**IDE integrations:** [IntelliJ plugin](https://plugins.jetbrains.com/plugin/30667-jstall) · [VS Code extension](https://marketplace.visualstudio.com/items?itemName=bechberger.jstall)
+
+Requires Java 17+ to run (target JVM can be 11+).
+
 ## Targets
 
 Most commands accept a **target** as the last argument(s):
