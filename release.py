@@ -34,6 +34,20 @@ def _copytree(src: Path, dst: Path):
     shutil.copytree(src, dst, ignore=_ignore)
 
 
+def _latest_maven_version(group_id: str, artifact_id: str) -> str | None:
+    """Return the latest release version of a Maven artifact from Maven Central, or None on error."""
+    import urllib.request
+    group_path = group_id.replace('.', '/')
+    url = f'https://repo1.maven.org/maven2/{group_path}/{artifact_id}/maven-metadata.xml'
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            xml = resp.read().decode()
+        m = re.search(r'<release>([^<]+)</release>', xml)
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
 def _patch_pom_for_minimal(pom_path: Path):
     """Patch pom.xml for minimal build."""
     content = pom_path.read_text()
@@ -49,8 +63,16 @@ def _patch_pom_for_minimal(pom_path: Path):
     # 3) dependency: ap-loader-all -> ap-loader-none
     content = content.replace('<artifactId>ap-loader-all</artifactId>', '<artifactId>ap-loader-none</artifactId>')
 
-    # 3.5) dependency: femtocli -> femtocli-minimal
+    # 3.5) dependency: femtocli -> femtocli-minimal, capped at latest published version
+    # femtocli-minimal may lag behind femtocli releases, so pin to the latest available version.
     content = content.replace('<artifactId>femtocli</artifactId>', '<artifactId>femtocli-minimal</artifactId>')
+    femtocli_minimal_latest = _latest_maven_version('me.bechberger.util', 'femtocli-minimal')
+    if femtocli_minimal_latest:
+        content = re.sub(
+            r'(<artifactId>femtocli-minimal</artifactId>\s*\n\s*<version>)[^<]+(</version>)',
+            r'\g<1>' + femtocli_minimal_latest + r'\g<2>',
+            content,
+        )
 
     # 4) remove JetBrains annotations dependency block
     # (pom uses groupId "org.jetbrains" and artifactId "annotations")
